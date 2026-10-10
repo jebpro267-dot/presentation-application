@@ -1,0 +1,51 @@
+{
+  "name": "stagedesk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A single-operator live presentation and production desktop application",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "desktop:dev": "concurrently -k \"npm:dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "tsc -b && vite build",
+    "test": "node --test",
+    "desktop": "electron .",
+    "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "obs-websocket-js": "^5.0.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "~5.7.2",
+    "vite": "^6.1.0",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.stagedesk.app",
+    "productName": "StageDesk",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.video"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
