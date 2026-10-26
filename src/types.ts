@@ -12,9 +12,21 @@ export type Slide = {
   background: string;
   kind?: "slide" | "song" | "scripture";
   section?: string;
+  songGroup?: string;
+  backgroundEnd?: string;
+  mediaUrl?: string;
+  mediaType?: "image" | "video";
   textColor?: string;
   fontSize?: number;
   textAlign?: "left" | "center" | "right";
+};
+
+export type LiveLayout = "center" | "lower-third" | "title-only" | "lyrics";
+
+export type LiveElements = {
+  title: boolean;
+  body: boolean;
+  background: boolean;
 };
 
 export type Project = {
@@ -24,6 +36,8 @@ export type Project = {
   slides: Slide[];
   currentSceneId: string;
   liveSlideId: string | null;
+  liveLayout?: LiveLayout;
+  liveElements?: LiveElements;
 };
 
 export type StageState = {
@@ -33,6 +47,8 @@ export type StageState = {
   slide: Slide | null;
   slideNumber: number;
   slideCount: number;
+  liveLayout?: LiveLayout;
+  liveElements?: LiveElements;
 };
 
 export type ProjectionDisplay = {

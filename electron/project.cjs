@@ -29,6 +29,12 @@ function isProject(value) {
         (slide.kind === undefined ||
           ["slide", "song", "scripture"].includes(slide.kind)) &&
         (slide.section === undefined || typeof slide.section === "string") &&
+        (slide.songGroup === undefined || typeof slide.songGroup === "string") &&
+        (slide.backgroundEnd === undefined || /^#[\da-f]{6}$/i.test(slide.backgroundEnd)) &&
+        ((slide.mediaUrl === undefined && slide.mediaType === undefined) ||
+          (typeof slide.mediaUrl === "string" &&
+            /^data:(image|video)\/[\w.+-]+;base64,/.test(slide.mediaUrl) &&
+            ["image", "video"].includes(slide.mediaType))) &&
         (slide.textColor === undefined || /^#[\da-f]{6}$/i.test(slide.textColor)) &&
         (slide.fontSize === undefined ||
           (Number.isInteger(slide.fontSize) &&
@@ -42,6 +48,13 @@ function isProject(value) {
     isRecord(value) &&
     value.version === projectVersion &&
     typeof value.name === "string" &&
+    (value.liveLayout === undefined ||
+      ["center", "lower-third", "title-only", "lyrics"].includes(value.liveLayout)) &&
+    (value.liveElements === undefined ||
+      (isRecord(value.liveElements) &&
+        typeof value.liveElements.title === "boolean" &&
+        typeof value.liveElements.body === "boolean" &&
+        typeof value.liveElements.background === "boolean")) &&
     hasValidScenes &&
     hasValidSlides &&
     typeof value.currentSceneId === "string" &&

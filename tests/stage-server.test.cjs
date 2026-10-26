@@ -8,7 +8,11 @@ test("serves a transparent OBS browser source with current presentation state", 
   try {
     const pageResponse = await fetch(stageUrl);
     assert.equal(pageResponse.status, 200);
-    assert.match(await pageResponse.text(), /StageDesk Presentation/);
+    const page = await pageResponse.text();
+    assert.match(page, /StageDesk Presentation/);
+    assert.match(page, /background-media/);
+    assert.match(page, /liveElements/);
+    assert.match(page, /state\?since=/);
 
     const initialState = {
       projectName: "Sunday Service",
@@ -21,6 +25,9 @@ test("serves a transparent OBS browser source with current presentation state", 
     stageServer.publish(initialState);
     const stateResponse = await fetch(new URL("/state", stageUrl));
     assert.deepEqual(await stateResponse.json(), initialState);
+    assert.equal(stateResponse.headers.get("x-stage-version"), "1");
+    const unchangedResponse = await fetch(new URL("/state?since=1", stageUrl));
+    assert.equal(unchangedResponse.status, 204);
   } finally {
     await stageServer.close();
   }

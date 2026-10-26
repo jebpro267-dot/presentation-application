@@ -1,7 +1,7 @@
 import { OBSWebSocket } from "obs-websocket-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { importSlides } from "../content/importSlides";
-import type { Project, ProjectionDisplay, Scene, Slide, StageState } from "../types";
+import type { LiveElements, LiveLayout, Project, ProjectionDisplay, Scene, Slide, StageState } from "../types";
 
 const initialProject: Project = {
   version: 1,
@@ -48,6 +48,8 @@ const initialProject: Project = {
   ],
   currentSceneId: "wide",
   liveSlideId: "welcome-slide",
+  liveLayout: "center",
+  liveElements: { title: true, body: true, background: true },
 };
 
 type WorkspacePage = "presentation" | "obs" | "live";
@@ -966,21 +968,21 @@ function ObsStudioPanel({ mode }: { mode: "obs" | "live" | "hidden" }) {
 
 function AudienceDisplay() {
   const [stage, setStage] = useState<StageState | null>(null);
+  const liveElements = stage?.liveElements ?? { title: true, body: true, background: true };
+  const liveLayout = stage?.liveLayout ?? "center";
 
   useEffect(() => window.stageDesk?.onStageUpdate(setStage), []);
 
   return (
     <main
-      className="audience-screen"
-      style={{
-        background:
-          stage?.slide?.background ?? stage?.sceneColor ?? "#080b0f",
-      }}
+      className={`audience-screen stage-live-${liveLayout}`}
+      style={backgroundStyle(stage?.slide ?? null, stage?.sceneColor ?? "#080b0f", liveElements.background)}
     >
+      <BackgroundMedia slide={stage?.slide ?? null} enabled={liveElements.background} />
       {stage?.slide ? (
-        <section className="audience-content" aria-live="polite">
+        <section className={`audience-content stage-live-${liveLayout}`} aria-live="polite">
           <p className="audience-kicker">{stage.projectName}</p>
-          <h1
+          {liveElements.title && liveLayout !== "lyrics" && <h1
             style={{
               color: stage.slide.textColor ?? "#ffffff",
               fontSize: stage.slide.fontSize
@@ -988,17 +990,17 @@ function AudienceDisplay() {
                 : undefined,
               textAlign: stage.slide.textAlign ?? "center",
             }}
-          >{stage.slide.title || " "}</h1>
-          <p
+          >{stage.slide.title || " "}</h1>}
+          {liveElements.body && liveLayout !== "title-only" && <p
             className="audience-body"
             style={{
               color: stage.slide.textColor ?? "#ffffff",
               fontSize: stage.slide.fontSize
-                ? `clamp(22px, ${stage.slide.fontSize / 14}vw, ${stage.slide.fontSize}px)`
+                ? `clamp(22px, ${stage.slide.fontSize / (liveLayout === "lyrics" ? 9 : 14)}vw, ${stage.slide.fontSize}px)`
                 : undefined,
               textAlign: stage.slide.textAlign ?? "center",
             }}
-          >{stage.slide.body || " "}</p>
+          >{stage.slide.body || " "}</p>}
         </section>
       ) : (
         <section className="audience-content audience-idle">
@@ -1014,10 +1016,36 @@ function makeId() {
   return crypto.randomUUID();
 }
 
+function songGroupName(slide: Slide) {
+  return slide.songGroup?.trim() || slide.title.trim() || "Untitled song";
+}
+
+function backgroundStyle(slide: Slide | null, fallback: string, showBackground = true) {
+  if (!showBackground || !slide) return { backgroundColor: fallback };
+  return {
+    backgroundColor: slide.background,
+    backgroundImage: slide.mediaUrl
+      ? undefined
+      : slide.backgroundEnd
+        ? `linear-gradient(135deg, ${slide.background}, ${slide.backgroundEnd})`
+        : undefined,
+  };
+}
+
+function BackgroundMedia({ slide, enabled }: { slide: Slide | null; enabled: boolean }) {
+  if (!enabled || !slide?.mediaUrl) return null;
+  return slide.mediaType === "video" ? (
+    <video className="stage-background-media" src={slide.mediaUrl} autoPlay muted loop playsInline />
+  ) : (
+    <img className="stage-background-media" src={slide.mediaUrl} alt="" />
+  );
+}
+
 function OperatorWorkspace() {
   const [project, setProject] = useState<Project>(initialProject);
   const [page, setPage] = useState<WorkspacePage>("presentation");
   const [contentFilter, setContentFilter] = useState<ContentFilter>("all");
+  const [selectedSongGroup, setSelectedSongGroup] = useState("");
   const [selectedSlideId, setSelectedSlideId] = useState(
     initialProject.liveSlideId ?? initialProject.slides[0]?.id ?? "",
   );
@@ -1025,6 +1053,7 @@ function OperatorWorkspace() {
   const [savedPath, setSavedPath] = useState("");
   const [savedProjectJson, setSavedProjectJson] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
   const [projectionDisplays, setProjectionDisplays] = useState<ProjectionDisplay[]>([]);
   const serializedProject = JSON.stringify(project);
   const isDirty = serializedProject !== savedProjectJson;
@@ -1045,12 +1074,15 @@ function OperatorWorkspace() {
   );
   const filteredSlides = useMemo(
     () =>
-      contentFilter === "all"
-        ? project.slides
-        : project.slides.filter(
-            (slide) => (slide.kind ?? "slide") === contentFilter,
-          ),
-    [contentFilter, project.slides],
+      project.slides.filter((slide) =>
+        (contentFilter === "all" || (slide.kind ?? "slide") === contentFilter) &&
+        (contentFilter !== "song" || !selectedSongGroup || songGroupName(slide) === selectedSongGroup),
+      ),
+    [contentFilter, project.slides, selectedSongGroup],
+  );
+  const songGroups = useMemo(
+    () => [...new Set(project.slides.filter((slide) => slide.kind === "song").map(songGroupName))],
+    [project.slides],
   );
   const liveIndex = project.slides.findIndex(
     (slide) => slide.id === project.liveSlideId,
@@ -1064,8 +1096,10 @@ function OperatorWorkspace() {
       slide: liveSlide,
       slideNumber: liveIndex < 0 ? 0 : liveIndex + 1,
       slideCount: project.slides.length,
+      liveLayout: project.liveLayout ?? "center",
+      liveElements: project.liveElements ?? { title: true, body: true, background: true },
     }),
-    [currentScene, liveIndex, liveSlide, project.name, project.slides.length],
+    [currentScene, liveIndex, liveSlide, project.liveElements, project.liveLayout, project.name, project.slides.length],
   );
 
   useEffect(() => {
@@ -1142,6 +1176,43 @@ function OperatorWorkspace() {
     }));
   };
 
+  const renameSongGroup = (slide: Slide, name: string) => {
+    const previousName = songGroupName(slide);
+    setProject((current) => ({
+      ...current,
+      slides: current.slides.map((item) =>
+        item.kind === "song" && songGroupName(item) === previousName
+          ? { ...item, songGroup: name }
+          : item,
+      ),
+    }));
+  };
+
+  const importSlideBackground = async (file?: File) => {
+    if (!file || !selectedSlide) return;
+    const slideId = selectedSlide.id;
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      setNotice("Choose an image or video file for the slide background.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setNotice("Background media must be 25 MB or smaller.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setNotice("Could not read the selected background file.");
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      updateSlide(slideId, {
+        mediaUrl: reader.result,
+        mediaType: file.type.startsWith("video/") ? "video" : "image",
+      });
+      setNotice(`Added ${file.name} as the slide background.`);
+    };
+    reader.readAsDataURL(file);
+    if (mediaInputRef.current) mediaInputRef.current.value = "";
+  };
+
   const addSlide = () => {
     const slide: Slide = {
       id: makeId(),
@@ -1160,12 +1231,12 @@ function OperatorWorkspace() {
   };
 
   const addSong = () => {
-    const songId = makeId();
     const background = "#273a51";
     const titleSlide: Slide = {
       id: makeId(),
       kind: "song",
       section: "Title",
+      songGroup: "New song",
       title: "New song",
       body: "Add the song title or artist.",
       background,
@@ -1173,7 +1244,8 @@ function OperatorWorkspace() {
     const verse: Slide = {
       id: makeId(),
       kind: "song",
-      section: `Verse 1 · ${songId}`,
+      section: "Verse 1",
+      songGroup: "New song",
       title: "New song",
       body: "Enter the first verse, one lyric line per row.",
       background,
@@ -1181,7 +1253,8 @@ function OperatorWorkspace() {
     const chorus: Slide = {
       id: makeId(),
       kind: "song",
-      section: `Chorus · ${songId}`,
+      section: "Chorus",
+      songGroup: "New song",
       title: "New song",
       body: "Enter the chorus, one lyric line per row.",
       background,
@@ -1364,6 +1437,17 @@ function OperatorWorkspace() {
     setProject((current) => ({ ...current, currentSceneId: id }));
   };
 
+  const setLiveLayout = (liveLayout: LiveLayout) => {
+    setProject((current) => ({ ...current, liveLayout }));
+  };
+
+  const toggleLiveElement = (key: keyof LiveElements) => {
+    setProject((current) => {
+      const liveElements = current.liveElements ?? { title: true, body: true, background: true };
+      return { ...current, liveElements: { ...liveElements, [key]: !liveElements[key] } };
+    });
+  };
+
   const selectedScene = project.scenes.find(
     (scene) => scene.id === project.currentSceneId,
   );
@@ -1465,13 +1549,14 @@ function OperatorWorkspace() {
                   <span className="monitor-scene">{currentScene?.name ?? "No scene"}</span>
                 </div>
                 <div
-                  className="preview-canvas live-canvas"
-                  style={{ backgroundColor: liveSlide?.background ?? currentScene?.color }}
+                  className={`preview-canvas live-canvas stage-live-${project.liveLayout ?? "center"}`}
+                  style={backgroundStyle(liveSlide, currentScene?.color ?? "#080b0f", (project.liveElements ?? initialProject.liveElements!).background)}
                 >
+                  <BackgroundMedia slide={liveSlide} enabled={(project.liveElements ?? initialProject.liveElements!).background} />
                   {liveSlide ? (
                     <div className="canvas-content" style={{ color: liveSlide.textColor ?? "#fff", textAlign: liveSlide.textAlign ?? "center" }}>
-                      <h2 style={{ fontSize: liveSlide.fontSize ? `clamp(18px, ${liveSlide.fontSize / 14}vw, ${liveSlide.fontSize}px)` : undefined }}>{liveSlide.title}</h2>
-                      <p>{liveSlide.body}</p>
+                      {(project.liveElements ?? initialProject.liveElements!).title && (project.liveLayout ?? "center") !== "lyrics" && <h2 style={{ fontSize: liveSlide.fontSize ? `clamp(18px, ${liveSlide.fontSize / 14}vw, ${liveSlide.fontSize}px)` : undefined }}>{liveSlide.title}</h2>}
+                      {(project.liveElements ?? initialProject.liveElements!).body && (project.liveLayout ?? "center") !== "title-only" && <p>{liveSlide.body}</p>}
                     </div>
                   ) : <div className="canvas-empty">BLACK · no slide on air</div>}
                   <div className="slide-counter">{liveIndex >= 0 ? `${liveIndex + 1} / ${project.slides.length}` : "BLACK"}</div>
@@ -1510,12 +1595,21 @@ function OperatorWorkspace() {
                 </div>
               </section>
               <aside className="live-controls-column">
+                <section className="content-column live-options">
+                  <div className="panel-title"><div><p className="eyebrow">OUTPUT DESIGN</p><h2>Live layout</h2></div></div>
+                  <label className="live-layout-select"><span>LAYOUT</span><select value={project.liveLayout ?? "center"} onChange={(event) => setLiveLayout(event.target.value as LiveLayout)}><option value="center">Centered</option><option value="lower-third">Lower third</option><option value="title-only">Title only</option><option value="lyrics">Lyrics focus</option></select></label>
+                  <div className="live-visibility-controls">
+                    <label><input type="checkbox" checked={(project.liveElements ?? initialProject.liveElements!).title} onChange={() => toggleLiveElement("title")} /> Title</label>
+                    <label><input type="checkbox" checked={(project.liveElements ?? initialProject.liveElements!).body} onChange={() => toggleLiveElement("body")} /> Lyrics / body</label>
+                    <label><input type="checkbox" checked={(project.liveElements ?? initialProject.liveElements!).background} onChange={() => toggleLiveElement("background")} /> Background</label>
+                  </div>
+                </section>
                 <section className="content-column live-rundown">
                   <div className="panel-title"><div><p className="eyebrow">CUE LIST</p><h2>Live slides</h2></div><span>{project.slides.length} cues</span></div>
                   <div className="live-slide-list">
                     {project.slides.map((slide, index) => (
                       <button key={slide.id} className={`live-slide-cue ${slide.id === project.liveSlideId ? "on-air" : ""}`} onClick={() => setLiveSlideByIndex(index)}>
-                        <b>{String(index + 1).padStart(2, "0")}</b><span>{slide.title || "Untitled"}<small>{slide.section || (slide.kind === "song" ? "Song lyric" : slide.kind === "scripture" ? "Scripture" : "Slide")}</small></span>{slide.id === project.liveSlideId && <i>LIVE</i>}
+                        <b>{String(index + 1).padStart(2, "0")}</b><span>{slide.title || "Untitled"}<small>{slide.kind === "song" ? `${songGroupName(slide)} · ${slide.section || "Lyric"}` : slide.section || (slide.kind === "scripture" ? "Scripture" : "Slide")}</small></span>{slide.id === project.liveSlideId && <i>LIVE</i>}
                       </button>
                     ))}
                   </div>
@@ -1598,6 +1692,9 @@ function OperatorWorkspace() {
                     </button>
                   ))}
                 </div>
+                {contentFilter === "song" && (
+                  <label className="song-group-filter"><span>SONG</span><select value={selectedSongGroup} onChange={(event) => setSelectedSongGroup(event.target.value)}><option value="">All songs</option>{songGroups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
+                )}
                 <div className="slide-list editorial-list">
                   {filteredSlides.map((slide) => {
                     const index = project.slides.findIndex((item) => item.id === slide.id);
@@ -1605,7 +1702,7 @@ function OperatorWorkspace() {
                       <div className={`slide-card ${slide.id === selectedSlideId ? "selected-editorial" : ""} ${slide.id === project.liveSlideId ? "on-air" : ""}`} key={slide.id}>
                         <button className="slide-select" onClick={() => setSelectedSlideId(slide.id)}>
                           <span className="slide-thumb" style={{ background: slide.background }}><strong>{slide.title || "Untitled"}</strong><small>{slide.body.split("\n")[0]}</small></span>
-                          <span className="slide-meta"><b>{String(index + 1).padStart(2, "0")}</b><span>{slide.title || "Untitled"}<small>{slide.section || slide.kind || "Slide"}</small></span></span>
+                          <span className="slide-meta"><b>{String(index + 1).padStart(2, "0")}</b><span>{slide.title || "Untitled"}<small>{slide.kind === "song" ? `${songGroupName(slide)} · ${slide.section || "Lyric"}` : slide.section || slide.kind || "Slide"}</small></span></span>
                         </button>
                         <div className="editorial-actions">
                           <button title="Put this cue live" aria-label={`Put ${slide.title} live`} onClick={() => setProject((current) => ({ ...current, liveSlideId: slide.id }))}>{slide.id === project.liveSlideId ? "ON AIR" : "LIVE"}</button>
@@ -1623,10 +1720,18 @@ function OperatorWorkspace() {
                   <div className="editor-card">
                     <div className="editor-title"><strong>Edit {selectedSlide.kind ?? "slide"}</strong><button className="button small quiet" onClick={() => setProject((current) => ({ ...current, liveSlideId: selectedSlide.id }))}>Put live</button></div>
                     <label><span>TITLE / REFERENCE</span><input value={selectedSlide.title} onChange={(event) => updateSlide(selectedSlide.id, { title: event.target.value })} /></label>
+                    {selectedSlide.kind === "song" && <label><span>SONG GROUP</span><input value={songGroupName(selectedSlide)} onChange={(event) => { renameSongGroup(selectedSlide, event.target.value); setSelectedSongGroup(event.target.value); }} placeholder="Song name" /></label>}
                     <label><span>SECTION / VERSE</span><input value={selectedSlide.section ?? ""} onChange={(event) => updateSlide(selectedSlide.id, { section: event.target.value })} placeholder="Verse 1, Chorus, John 3:16…" /></label>
                     <label><span>BODY / LYRICS / PASSAGE</span><textarea rows={3} value={selectedSlide.body} onChange={(event) => updateSlide(selectedSlide.id, { body: event.target.value })} /></label>
+                    <div className="background-media-controls">
+                      <input ref={mediaInputRef} className="visually-hidden" type="file" accept="image/*,video/*" onChange={(event) => void importSlideBackground(event.target.files?.[0])} />
+                      <button className="button small quiet" onClick={() => mediaInputRef.current?.click()}>{selectedSlide.mediaUrl ? "Replace media" : "Add image / video"}</button>
+                      {selectedSlide.mediaUrl && <button className="button small quiet" onClick={() => updateSlide(selectedSlide.id, { mediaUrl: undefined, mediaType: undefined })}>Remove media</button>}
+                      <span>{selectedSlide.mediaType ? `${selectedSlide.mediaType} background` : "Create a solid or gradient background below"}</span>
+                    </div>
                     <div className="editor-style-row">
                       <label className="color-editor"><span>BACKGROUND</span><input type="color" value={selectedSlide.background} onChange={(event) => updateSlide(selectedSlide.id, { background: event.target.value })} /></label>
+                      <label className="color-editor"><span>GRADIENT TO</span><input type="color" value={selectedSlide.backgroundEnd ?? selectedSlide.background} onChange={(event) => updateSlide(selectedSlide.id, { backgroundEnd: event.target.value })} /></label>
                       <label className="color-editor"><span>TEXT</span><input type="color" value={selectedSlide.textColor ?? "#ffffff"} onChange={(event) => updateSlide(selectedSlide.id, { textColor: event.target.value })} /></label>
                       <label><span>ALIGN</span><select value={selectedSlide.textAlign ?? "center"} onChange={(event) => updateSlide(selectedSlide.id, { textAlign: event.target.value as Slide["textAlign"] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
                       <label><span>FONT SIZE</span><input type="number" min={12} max={120} value={selectedSlide.fontSize ?? 48} onChange={(event) => updateSlide(selectedSlide.id, { fontSize: Math.min(120, Math.max(12, Number(event.target.value) || 12)) })} /></label>

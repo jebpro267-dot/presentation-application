@@ -47,6 +47,37 @@ test("accepts editorial formatting on presentation and lyric slides", () => {
   );
 });
 
+test("accepts song groups, embedded backgrounds, and live output settings", () => {
+  assert.equal(
+    isProject({
+      ...validProject,
+      liveLayout: "lower-third",
+      liveElements: { title: true, body: false, background: true },
+      slides: [{
+        ...validProject.slides[0],
+        kind: "song",
+        section: "Verse 1",
+        songGroup: "Opening song",
+        backgroundEnd: "#ffffff",
+        mediaUrl: "data:image/png;base64,aGVsbG8=",
+        mediaType: "image",
+      }],
+    }),
+    true,
+  );
+});
+
+test("rejects unsupported live settings and malformed media", () => {
+  assert.equal(isProject({ ...validProject, liveLayout: "unsupported" }), false);
+  assert.equal(
+    isProject({
+      ...validProject,
+      slides: [{ ...validProject.slides[0], mediaUrl: "https://example.test/bg.png", mediaType: "image" }],
+    }),
+    false,
+  );
+});
+
 test("rejects unsupported versions and malformed collection entries", () => {
   assert.equal(isProject({ ...validProject, version: 2 }), false);
   assert.equal(
